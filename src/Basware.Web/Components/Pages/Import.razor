@@ -1,0 +1,32 @@
+@page "/import"
+@attribute [Authorize]
+@inherits OperationPage
+<PageTitle>XML importeren · Basware</PageTitle>
+<div class="heading"><div><p class="eyebrow">DOCUMENTEN</p><h1>XML importeren</h1><p class="muted">Voeg bestellingen uit Basware toe aan de bestaande database.</p></div><a class="button secondary" href="https://www.baswareone.com/psc1/login.jsp" target="_blank" rel="noopener noreferrer">Open Basware-portaal ↗</a></div>
+@if(!Database.Configured){<DatabaseNotice />}
+else {
+<section class="panel upload"><h2>Kies je XML-bestanden</h2><p>Maximaal 50 bestanden tegelijk, tot 10 MB per bestand. Reeds geïmporteerde documenten worden overgeslagen.</p><InputFile OnChange="Choose" multiple accept=".xml" disabled="@Busy" /><p>@files.Count bestand(en) geselecteerd</p><button disabled="@(Busy || files.Count == 0)" @onclick="ImportFiles">@(Busy ? "Bezig met importeren…" : "Importeren")</button></section>
+@if(Error is not null){<p class="notice error" role="alert">@Error</p>}
+@if(results.Count > 0){<section class="panel"><h2>Importresultaten</h2><table><thead><tr><th>Bestand</th><th>Resultaat</th></tr></thead><tbody>@foreach(var r in results){<tr><td>@r.Name</td><td>@r.Message</td></tr>}</tbody></table></section>}
+}
+@code{
+    IReadOnlyList<IBrowserFile> files=[];
+    List<(string Name,string Message)> results=[];
+    void Choose(InputFileChangeEventArgs e) { Error=null; files=[]; if(e.FileCount>50){Error="Selecteer maximaal 50 bestanden.";return;} files=e.GetMultipleFiles(50); }
+    Task ImportFiles()=>Run(async()=>{
+        results.Clear();
+        var importer=Services.GetRequiredService<EdiXmlImporter>();
+        foreach(var file in files){
+            try {
+                if(!file.Name.EndsWith(".xml",StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException();
+                await using var stream=file.OpenReadStream(10*1024*1024,Lifetime.Token);
+                using var reader=new StreamReader(stream,new System.Text.UTF8Encoding(false,true));
+                var xml=await reader.ReadToEndAsync(Lifetime.Token);
+                var result=await importer.ImportXmlAsync(xml,Path.GetFileName(file.Name),Lifetime.Token);
+                results.Add((file.Name,result.Imported?$"Geïmporteerd: {result.OrderCount} order(s)":"Reeds aanwezig; overgeslagen"));
+            } catch(OperationCanceledException) when(Lifetime.IsCancellationRequested){throw;}
+            catch(Exception ex){Logger.LogWarning(ex,"XML import failed");results.Add((file.Name,"Niet geïmporteerd. Controleer XML-formaat, bestandsgrootte en databaseverbinding."));}
+        }
+        files=[];
+    });
+}

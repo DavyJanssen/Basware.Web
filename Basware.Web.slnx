@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Basware.Core/Basware.Core.csproj" />
+    <Project Path="src/Basware.Web/Basware.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Basware.Tests/Basware.Tests.csproj" />
+  </Folder>
+</Solution>

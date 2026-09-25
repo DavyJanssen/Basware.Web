@@ -1,0 +1,31 @@
+@page "/laboratories"
+@attribute [Authorize]
+@inherits OperationPage
+<PageTitle>CNK &amp; labo’s · Basware</PageTitle>
+<div class="heading"><div><p class="eyebrow">ARTIKELBEHEER</p><h1>CNK &amp; labo’s</h1><p class="muted">Beheer de expliciete koppeling tussen een artikel en zijn labo.</p></div></div>
+@if(!Database.Configured){<DatabaseNotice />}
+else{
+<div class="columns"><section class="panel"><h2>Artikel koppelen</h2><label>CNK<input @bind="cnk" placeholder="0000-000" maxlength="8" /></label><button class="quiet" disabled="@Busy" @onclick="Lookup">Bestaande koppeling zoeken</button><label>Labo<input @bind="laboratory" list="labs" maxlength="255" placeholder="Naam van het labo" /></label><datalist id="labs">@foreach(var name in names){<option value="@name" />}</datalist><p class="muted">Opslaan vervangt een eventuele bestaande koppeling voor deze CNK.</p><button disabled="@(Busy || string.IsNullOrWhiteSpace(cnk) || string.IsNullOrWhiteSpace(laboratory))" @onclick="Save">Koppeling opslaan</button></section>
+<section class="panel"><h2>Koppelingen importeren</h2><p>Upload een JSON-bestand met CNK-codes als sleutels en labonamen als waarden. Afwijkende bestaande koppelingen blijven behouden.</p><pre>{"1361211": "Labo naam"}</pre><InputFile OnChange="PickJson" accept=".json" disabled="@Busy" /><button disabled="@(Busy || json is null)" @onclick="ImportJson">JSON importeren</button></section></div>
+@if(Error is not null){<p class="notice error" role="alert">@Error</p>}
+@if(message is not null){<p class="notice" role="status">@message</p>}
+}
+@code{
+    string cnk="",laboratory=""; string? message; IReadOnlyList<string> names=[]; IBrowserFile? json;
+    LaboratoryCatalogService Catalog=>Services.GetRequiredService<LaboratoryCatalogService>();
+    protected override Task OnInitializedAsync()=>Database.Configured?Run(async()=>names=await Catalog.GetLaboratoryNamesAsync(Lifetime.Token)):Task.CompletedTask;
+    Task Lookup()=>Run(async()=>{ laboratory=await Catalog.GetMappingAsync(cnk,Lifetime.Token)??"";message=laboratory.Length==0?"Nog geen koppeling gevonden.":$"Bestaande koppeling: {laboratory}.";});
+    Task Save()=>Run(async()=>{await Catalog.SaveMappingAsync(cnk,laboratory,Lifetime.Token);message="Koppeling opgeslagen.";names=await Catalog.GetLaboratoryNamesAsync(Lifetime.Token);});
+    void PickJson(InputFileChangeEventArgs e)=>json=e.File;
+    Task ImportJson()=>Run(async()=>{
+        var directory=Path.Combine(Path.GetTempPath(),"basware-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
+        try{
+            var path=Path.Combine(directory,"catalogus.json");
+            await using(var input=json!.OpenReadStream(10*1024*1024,Lifetime.Token))
+            await using(var output=File.Create(path)){await input.CopyToAsync(output,Lifetime.Token);}
+            var result=await Catalog.ImportJsonAsync(path,Lifetime.Token);
+            message=$"{result.Added} toegevoegd, {result.Unchanged} ongewijzigd, {result.Conflicts} conflicten behouden.";
+            names=await Catalog.GetLaboratoryNamesAsync(Lifetime.Token);json=null;
+        } finally{Directory.Delete(directory,true);}
+    });
+}

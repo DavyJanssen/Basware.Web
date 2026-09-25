@@ -1,0 +1,44 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Basware: ${BASWARE_CONNECTION_STRING:?Vul BASWARE_CONNECTION_STRING in .env in}
+      Authentication__Username: ${BASWARE_USERNAME:-admin}
+      Authentication__Password: ${BASWARE_PASSWORD:?Vul BASWARE_PASSWORD in .env in}
+      DataProtection__KeysPath: /app/keys
+      ReverseProxy__Address: 172.30.48.2
+      ASPNETCORE_HTTPS_PORT: 443
+      AllowedHosts: ${BASWARE_HOST:?Vul BASWARE_HOST in .env in}
+    volumes:
+      - keys:/app/keys
+    networks:
+      basware:
+        ipv4_address: 172.30.48.3
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      BASWARE_HOST: ${BASWARE_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      basware:
+        ipv4_address: 172.30.48.2
+volumes:
+  keys:
+  caddy_data:
+  caddy_config:
+networks:
+  basware:
+    ipam:
+      config:
+        - subnet: 172.30.48.0/24

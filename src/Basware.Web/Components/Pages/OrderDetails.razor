@@ -1,0 +1,27 @@
+@page "/orders/{Id:long}"
+@attribute [Authorize]
+@inherits OperationPage
+@inject IJSRuntime JS
+@inject OrderWorkspace Workspace
+<PageTitle>Orderdetails · Basware</PageTitle>
+<a href="/">← Alle orders</a><div class="heading"><div><p class="eyebrow">ORDERDETAILS</p><h1>@(details?.OrderNumber ?? details?.DocumentNumber ?? "Order")</h1></div>@if(details is not null){<button @onclick="SelectForPrint">Toevoegen aan verkooporders</button>}</div>
+@if (!Database.Configured) { <DatabaseNotice /> }
+@if (Error is not null) { <p class="notice error" role="alert">@Error</p> }
+@if (Busy) { <p>Order laden…</p> }
+else if(details is not null)
+{
+    <div class="stats"><section><span>Labo</span><strong class="small-value">@details.LaboratoryDisplay</strong></section><section><span>Leveringsvestiging</span><strong class="small-value">@details.DeliveryPointNames</strong></section><section><span>Gevraagde levering</span><strong class="small-value">@details.RequestedDeliveryDate?.ToString("dd/MM/yyyy")</strong></section></div>
+    <p class="notice">@details.LaboratoryNotice</p>
+    <section class="panel"><div class="toolbar"><h2>Orderregels <span class="muted">(@details.Lines.Count)</span></h2><button class="quiet" @onclick="DownloadXml">Bron-XML downloaden</button></div>
+    <div class="table-scroll"><table><thead><tr><th>Regel</th><th>CNK</th><th>Omschrijving</th><th>Aantallen</th><th>Labo</th></tr></thead><tbody>@foreach(var line in details.Lines){<tr><td>@line.LineNumber</td><td>@string.Join(", ",line.CnkNumbers)</td><td>@line.Description</td><td class="pre">@line.QuantityDisplay</td><td>@line.LaboratoryDisplay<small>@line.LaboratoryBasis</small></td></tr>}</tbody></table></div></section>
+    <section class="panel"><h2>Partners</h2><div class="table-scroll"><table><thead><tr><th>Type</th><th>Nummer</th><th>Naam</th></tr></thead><tbody>@foreach(var p in details.Partners){<tr><td>@p.PartnerType</td><td>@p.PartnerId</td><td>@p.DisplayName</td></tr>}</tbody></table></div></section>
+    <p class="muted">Document @details.DocumentNumber · bron @details.SourceFilename · geïmporteerd @details.ImportedAt.ToString("dd/MM/yyyy HH:mm")</p>
+}
+else if(Database.Configured && Error is null) { <p class="notice">Deze order bestaat niet.</p> }
+@code {
+    [Parameter] public long Id {get;set;}
+    EdiOrderDetails? details;
+    protected override Task OnParametersSetAsync() => Database.Configured ? Run(async () => { details = await Services.GetRequiredService<EdiOrderRepository>().GetDetailsAsync(Id, Lifetime.Token); }) : Task.CompletedTask;
+    void SelectForPrint() => Workspace.Selected.Add(Id);
+    Task DownloadXml() => Run(async () => { using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(details!.RawXml ?? "")); using var reference = new DotNetStreamReference(stream); await JS.InvokeVoidAsync("basware.download", $"order-{Id}.xml", "application/xml", reference); });
+}

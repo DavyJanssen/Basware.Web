@@ -1,0 +1,40 @@
+@page "/"
+@attribute [Authorize]
+@inherits OperationPage
+@inject OrderWorkspace Workspace
+<PageTitle>Orders · Basware</PageTitle>
+<div class="heading"><div><p class="eyebrow">ORDERBEHEER</p><h1>Opgeslagen orders</h1><p class="muted">Alle bestellingen, labo’s en leveringsvestigingen op één plek.</p></div><a class="button" href="/import">+ XML importeren</a></div>
+@if (!Database.Configured) { <DatabaseNotice /> }
+else
+{
+    <div class="stats"><section><span>Opgeslagen orders</span><strong>@orders.Count</strong></section><section><span>Labo’s</span><strong>@orders.SelectMany(o => o.LaboratoryNames).Distinct().Count()</strong></section><section><span>Geselecteerd</span><strong>@Workspace.Selected.Count</strong></section></div>
+    <section class="panel">
+        <div class="filters"><label>Zoeken<input @bind="search" @bind:event="oninput" placeholder="Order- of documentnummer" /></label><label>Labo<input @bind="lab" @bind:event="oninput" placeholder="Alle labo’s" /></label><label>Vestiging<input @bind="location" @bind:event="oninput" placeholder="Naam of code" /></label><label>Levering vanaf<input type="date" @bind="from" /></label><label>Levering t/m<input type="date" @bind="to" /></label></div>
+        <div class="toolbar"><span>@Filtered.Count() van @orders.Count orders · @Workspace.Selected.Count geselecteerd</span><button class="quiet" @onclick="Clear">Filters wissen</button><button class="quiet" disabled="@Busy" @onclick="Load">Vernieuwen</button><button class="quiet" @onclick="SelectVisible">Zichtbare selecteren</button><button class="quiet" @onclick="() => Workspace.Selected.Clear()">Selectie wissen</button><a class="button" href="/sales">Verkooporders →</a></div>
+        @if (from > to) { <p class="notice error">De begindatum moet vóór de einddatum liggen.</p> }
+        @if (Error is not null) { <p role="alert" class="notice error">@Error</p> }
+        @if (Busy) { <p class="empty">Orders laden…</p> }
+        else if (!Filtered.Any()) { <div class="empty"><h2>Geen orders gevonden</h2><p>Pas de filters aan of importeer een XML-bestand.</p></div> }
+        else
+        {
+            <div class="table-scroll"><table><thead><tr><th>Selectie</th><th>Order</th><th>Labo</th><th>Vestiging</th><th>Orderdatum</th><th>Leverdatum</th><th></th></tr></thead><tbody>
+            @foreach (var o in Filtered.Skip(page * 50).Take(50))
+            { <tr @key="o.Id"><td><input aria-label="Selecteer order @(o.OrderNumber ?? o.DocumentNumber)" type="checkbox" checked="@Workspace.Selected.Contains(o.Id)" @onchange="e => Select(o.Id, e.Value is true)" /></td><td><a href="/orders/@o.Id">@(o.OrderNumber ?? o.DocumentNumber)</a><small>@o.DocumentNumber</small></td><td><span class="badge @(o.HasMixedLaboratories ? "warning" : "")">@o.LaboratoryDisplay</span></td><td>@(o.DeliveryPointShortCode ?? o.DeliveryPointId ?? "—")</td><td>@o.OrderDate?.ToString("dd/MM/yyyy")</td><td>@o.RequestedDeliveryDate?.ToString("dd/MM/yyyy")</td><td><a href="/orders/@o.Id">Bekijken →</a></td></tr> }
+            </tbody></table></div>
+            <div class="toolbar"><button class="quiet" disabled="@(page == 0)" @onclick="() => page--">Vorige</button><span>Pagina @(page + 1)</span><button class="quiet" disabled="@((page + 1) * 50 >= Filtered.Count())" @onclick="() => page++">Volgende</button></div>
+        }
+    </section>
+}
+@code {
+    IReadOnlyList<EdiOrderSummary> orders = [];
+    string search = "", lab = "", location = "";
+    DateTime? from, to;
+    int page;
+    IEnumerable<EdiOrderSummary> Filtered => orders.Where(o => SalesOrderFilter.Matches(o, from, to, lab, location) && (string.IsNullOrWhiteSpace(search) || (o.OrderNumber ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) || o.DocumentNumber.Contains(search, StringComparison.OrdinalIgnoreCase)));
+    protected override Task OnInitializedAsync() => Database.Configured ? Load() : Task.CompletedTask;
+    Task Load() => Run(async () => { orders = await Services.GetRequiredService<EdiOrderRepository>().GetOrdersAsync(Lifetime.Token); Workspace.Selected.IntersectWith(orders.Select(o => o.Id)); page = 0; });
+    void Clear() { search = lab = location = ""; from = to = null; page = 0; }
+    void Select(long id, bool value) { if (value) Workspace.Selected.Add(id); else Workspace.Selected.Remove(id); }
+    void SelectVisible() { foreach (var order in Filtered) Workspace.Selected.Add(order.Id); }
+    protected override void OnAfterRender(bool firstRender) { if(page > 0 && page * 50 >= Filtered.Count()) { page = 0; StateHasChanged(); } }
+}

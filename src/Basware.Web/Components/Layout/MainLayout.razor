@@ -1,0 +1,17 @@
+@inherits LayoutComponentBase
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="/"><span class="brand-icon">B</span> Basware<span class="brand-sub">ORDERBEHEER</span></a>
+        <p class="nav-label">WERKRUIMTE</p>
+        <NavLink href="/" Match="NavLinkMatch.All">Orders <span>01</span></NavLink>
+        <NavLink href="/import">XML importeren <span>02</span></NavLink>
+        <NavLink href="/laboratories">CNK &amp; labo’s <span>03</span></NavLink>
+        <NavLink href="/sales">Verkooporders <span>04</span></NavLink>
+        <div class="sidebar-bottom"><a href="https://www.baswareone.com/psc1/login.jsp" target="_blank" rel="noopener noreferrer">Basware-portaal ↗</a><small>PharmaBase · orderadministratie</small></div>
+    </aside>
+    <div class="workspace">
+        <header><span>PharmaBase <span class="muted">/ Basware</span></span><AuthorizeView><Authorized><form action="/auth/logout" method="post"><AntiforgeryToken /><span>@context.User.Identity?.Name</span> <button class="quiet" type="submit">Uitloggen</button></form></Authorized><NotAuthorized><a href="/login">Inloggen</a></NotAuthorized></AuthorizeView></header>
+        <main>@Body</main>
+    </div>
+</div>
+<div id="blazor-error-ui">De verbinding is onderbroken. <a href="">Pagina opnieuw laden</a><a class="dismiss">Sluiten</a></div>

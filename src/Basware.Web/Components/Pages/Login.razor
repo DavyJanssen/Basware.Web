@@ -1,0 +1,18 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject IConfiguration Configuration
+<PageTitle>Inloggen · Basware</PageTitle>
+<section class="login panel"><p class="eyebrow">BASWARE WEB</p><h1>Welkom terug.</h1><p class="muted">Log in om orders en leveringen te beheren.</p>
+@if ((Configuration["Authentication:Password"]?.Length ?? 0) < 16)
+{ <div class="notice">De beheerder moet eerst een gebruikersnaam en een wachtwoord van minstens 16 tekens instellen. Raadpleeg de installatiehandleiding bij het project.</div> }
+else
+{
+    @if (Failed) { <p class="notice error" role="alert">De inloggegevens zijn niet correct.</p> }
+    <form action="/auth/login" method="post"><AntiforgeryToken />
+        <label>Gebruikersnaam<input name="username" autocomplete="username" required /></label>
+        <label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit">Inloggen</button>
+    </form>
+}
+</section>
+@code { [SupplyParameterFromQuery] public bool Failed { get; set; } }

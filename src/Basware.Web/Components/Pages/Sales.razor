@@ -1,0 +1,45 @@
+@page "/sales"
+@attribute [Authorize]
+@inherits OperationPage
+@inject OrderWorkspace Workspace
+@inject IJSRuntime JS
+<PageTitle>Verkooporders · Basware</PageTitle>
+<div class="heading"><div><p class="eyebrow">EXPORT &amp; AFDRUKKEN</p><h1>Verkooporders</h1><p class="muted">Maak een afdruk of een Excel-overzicht per labo en vestiging.</p></div><a class="button secondary" href="/">Orders selecteren</a></div>
+@if(!Database.Configured){<DatabaseNotice />}
+else if(Workspace.Selected.Count==0){<section class="panel empty"><h2>Selecteer eerst één of meer orders</h2><p>Vink orders aan in het orderoverzicht. Je selectie blijft behouden zolang deze pagina open is.</p><a class="button" href="/">Naar het orderoverzicht</a></section>}
+else{
+<section class="panel"><div class="toolbar"><strong>@Workspace.Selected.Count order(s) geselecteerd</strong><button disabled="@Busy" @onclick="Load">Selectie laden</button><button class="secondary" disabled="@(Busy || orders.Count==0)" @onclick="Excel">Excel per vestiging</button><button class="secondary" disabled="@(Busy || orders.Count==0)" @onclick="Preview">Afdruk voorbereiden</button></div><p class="muted">Aantallen en opmerkingen hieronder gelden alleen voor de afdruk. Excel gebruikt de originele bestelde aantallen uit de database.</p></section>
+@if(Error is not null){<p class="notice error" role="alert">@Error</p>}
+@foreach(var order in orders){<section class="panel" @key="order.Id"><h2>@order.PrintOrderNumber <span class="muted">· @order.ClientName</span></h2><p>@order.PrintLaboratory · levering @order.PrintRequestedDelivery</p><div class="table-scroll"><table><thead><tr><th>CNK</th><th>Omschrijving</th><th>Aantal (afdruk)</th><th>Opmerking (afdruk)</th></tr></thead><tbody>@foreach(var line in order.Lines){<tr><td>@line.CnkDisplay</td><td>@line.Description</td><td><input aria-label="Aantal voor @line.Description" @bind="line.Quantity" /></td><td><input aria-label="Opmerking voor @line.Description" @bind="line.Comment" /></td></tr>}</tbody></table></div></section>}
+@if(html is not null){<section class="panel"><div class="toolbar"><h2>Afdrukvoorbeeld</h2><button @onclick="Print">Afdrukken / opslaan als PDF</button></div><p class="muted">Kies ‘Opslaan als PDF’ in het afdrukvenster. Bereid het voorbeeld opnieuw voor na een wijziging.</p><iframe id="print-preview" title="Verkooporders afdrukvoorbeeld" srcdoc="@html"></iframe></section>}
+}
+@code{
+    IReadOnlyList<SalesOrderPrintData> orders=[];string? html;
+    protected override Task OnInitializedAsync()=>Database.Configured && Workspace.Selected.Count>0?Load():Task.CompletedTask;
+    Task Load()=>Run(async()=>{
+        html=null;var next=new List<SalesOrderPrintData>();var repo=Services.GetRequiredService<EdiOrderRepository>();
+        foreach(var id in Workspace.Selected){
+            if(!Workspace.PrintEdits.TryGetValue(id,out var data)){
+                var details=await repo.GetDetailsAsync(id,Lifetime.Token);
+                if(details is null){Error="Een geselecteerde order bestaat niet meer. Vernieuw de orderlijst.";orders=[];return;}
+                data=SalesOrderPrintData.FromDetails(id,details);Workspace.PrintEdits[id]=data;
+            }
+            next.Add(data);
+        }
+        orders=SalesOrderPrintData.Sort(next);
+    });
+    void Preview()=>html=SalesOrderPdfDocument.BuildHtml(orders)+"<script>"+SalesOrderPdfDocument.FitPagesScript+"</script>";
+    async Task Print()=>await JS.InvokeVoidAsync("basware.print","print-preview");
+    Task Excel()=>Run(async()=>{
+        var input=new List<SummaryOrder>();var repo=Services.GetRequiredService<EdiOrderRepository>();
+        foreach(var id in Workspace.Selected){var details=await repo.GetDetailsAsync(id,Lifetime.Token);if(details is null){Error="Een geselecteerde order bestaat niet meer.";return;}input.Add(new(id,details));}
+        SalesOrderSummary summary;
+        try{summary=SalesOrderSummary.Create(input);}catch(InvalidOperationException ex){Error=ex.Message;return;}
+        var path=Path.Combine(Path.GetTempPath(),"basware-"+Guid.NewGuid().ToString("N")+".xlsx");
+        try{
+            SalesOrderExcelExporter.Export(path,summary,Lifetime.Token);
+            await using var stream=File.OpenRead(path);using var reference=new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("basware.download","Verkooporders.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",reference);
+        }finally{File.Delete(path);}
+    });
+}
